@@ -30,10 +30,11 @@ public sealed class MainForm : Form
         _service.EntryAdded += _ => { if (!IsDisposed) BeginInvoke(RefreshAll); };
 
         Text = "ClipMate 剪贴板历史";
-        Width = 860;
-        Height = 560;
+        // 窗口需容纳「左分组树 + 右列表四列」，过窄会把「大小/分组」列挤出可视区
+        Width = 1080;
+        Height = 600;
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(680, 400);
+        MinimumSize = new Size(900, 450);
         Font = new Font("Microsoft YaHei UI", 9F);
 
         BuildLayout();
@@ -62,7 +63,13 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             HideSelection = false,
-            BorderStyle = BorderStyle.FixedSingle
+            BorderStyle = BorderStyle.FixedSingle,
+            // 分组是扁平列表，不需要展开按钮与连接线
+            ShowLines = false,
+            ShowRootLines = false,
+            ShowPlusMinus = false,
+            FullRowSelect = true,
+            ItemHeight = 24
         };
         // 单击即进入（核心改进：不需要双击）
         _groupTree.NodeMouseClick += (_, e) =>
@@ -83,9 +90,9 @@ public sealed class MainForm : Form
             MultiSelect = false,
             VirtualMode = false
         };
-        _entryList.Columns.Add("内容", 520);
-        _entryList.Columns.Add("时间", 140);
-        _entryList.Columns.Add("大小", 90);
+        _entryList.Columns.Add("内容", 440);
+        _entryList.Columns.Add("时间", 150);
+        _entryList.Columns.Add("大小", 80);
         _entryList.Columns.Add("分组", 90);
         _entryList.DoubleClick += (_, _) => PasteSelected();
         _entryList.KeyDown += (_, e) =>
@@ -138,7 +145,7 @@ public sealed class MainForm : Form
             Panel2MinSize = 320
         };
         // SplitterDistance 在布局完成后设置，防止与 min-size 冲突
-        Load += (_, _) => _split.SplitterDistance = 200;
+        Load += (_, _) => _split.SplitterDistance = 180;
         _split.Panel1.Controls.Add(leftPanel);
         _split.Panel2.Controls.Add(rightPanel);
 

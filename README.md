@@ -17,6 +17,12 @@
 
 ClipMate 常驻系统托盘，自动记录你复制过的文本内容。按 `Ctrl+Shift+V` 随时唤出历史列表，双击任意一条即可重新粘贴回剪贴板。还可以把密码、命令、常用模板放进**分组**永久保留，单击分组即取。
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="ClipMate 主界面" width="820">
+</p>
+
+<p align="center"><sub>左侧分组树（单击即进入）· 右侧历史列表（内容 / 时间 / 大小 / 分组）· 底部状态栏显示总条数与占用</sub></p>
+
 ## 为什么做这个
 
 原本用的是 [Ditto](https://ditto-cp.sourceforge.net/)，但它的几个问题让人难受。于是用 [REA](https://rea.tools/) 对 Microsoft Store 版 Ditto 3.25.113.0 做了数据层 + 行为层逆向分析，把根因挖清楚后重写了一个：
@@ -161,8 +167,10 @@ ClipMate/
 ├── packaging/ClipMate.iss         # Inno Setup 安装脚本
 ├── docs/
 │   ├── LICENSE.txt                # 安装向导展示的许可证文本
+│   ├── screenshot.png             # 界面截图（make_screenshot.py 生成）
 │   └── ditto-reverse-engineering.md  # Ditto 逆向分析报告
 ├── make_icon.py                   # 纯标准库图标生成器（SDF 抗锯齿）
+├── make_screenshot.py             # 界面截图工具（PrintWindow 抓客户区）
 ├── build.cmd                      # 一键发布
 ├── LICENSE                        # MIT
 └── README.md
