@@ -1,0 +1,93 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <AssemblyName>ClipMate</AssemblyName>
+    <RootNamespace>ClipMate</RootNamespace>
+    <ApplicationIcon>..\..\assets\ClipMate.ico</ApplicationIcon>
+
+    <!-- 版本号：三处保持一致 -->
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+
+    <Product>ClipMate</Product>
+    <Company>ClipMate</Company>
+    <Authors>ClipMate</Authors>
+    <Description>轻量剪贴板历史管理器：条数与字节双限额淘汰、单击进入分组、无网络共享</Description>
+    <Copyright>Copyright © 2026</Copyright>
+
+    <!-- 单文件发布相关 -->
+    <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PublishTrimmed>false</PublishTrimmed>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- 把 native 库（SQLite 引擎、.NET 运行时 native 库）嵌入 exe，运行时自解压，做到真·单文件 -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.Data.Sqlite：纯托管、无原生依赖，利于免安装部署 -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+  </ItemGroup>
+
+  <!--
+    体积精简：self-contained 发布会把整个 Microsoft.WindowsDesktop.App runtime pack
+    （WinForms + WPF 合并）全量复制，但纯 WinForms 应用用不到 WPF。
+    这里在发布清单里排除 WPF 渲染/控件层程序集，可省约 40MB。
+    注意：保留 WindowsBase.dll 和 UIAutomation*（WinForms 可能间接引用），
+    实测删除其余 WPF 程序集后程序正常运行。
+  -->
+  <ItemGroup>
+    <_WpfExclude Include="PresentationFramework" />
+    <_WpfExclude Include="PresentationFramework-SystemCore" />
+    <_WpfExclude Include="PresentationFramework-SystemData" />
+    <_WpfExclude Include="PresentationFramework-SystemDrawing" />
+    <_WpfExclude Include="PresentationFramework-SystemXml" />
+    <_WpfExclude Include="PresentationFramework-SystemXmlLinq" />
+    <_WpfExclude Include="PresentationFramework.Aero" />
+    <_WpfExclude Include="PresentationFramework.Aero2" />
+    <_WpfExclude Include="PresentationFramework.AeroLite" />
+    <_WpfExclude Include="PresentationFramework.Classic" />
+    <_WpfExclude Include="PresentationFramework.Luna" />
+    <_WpfExclude Include="PresentationFramework.Royale" />
+    <_WpfExclude Include="PresentationCore" />
+    <_WpfExclude Include="PresentationNative_cor3" />
+    <_WpfExclude Include="PresentationUI" />
+    <_WpfExclude Include="ReachFramework" />
+    <_WpfExclude Include="System.Xaml" />
+    <_WpfExclude Include="System.Printing" />
+    <_WpfExclude Include="System.Windows.Controls.Ribbon" />
+    <_WpfExclude Include="System.Windows.Presentation" />
+    <_WpfExclude Include="wpfgfx_cor3" />
+    <_WpfExclude Include="D3DCompiler_47_cor3" />
+    <_WpfExclude Include="PenImc_cor3" />
+  </ItemGroup>
+
+  <Target Name="RemoveWpfFromPublish" BeforeTargets="_ComputeFilesToBundle" Condition="'$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'PresentationFramework'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('PresentationFramework-'))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('PresentationFramework.'))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'PresentationCore'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'PresentationNative_cor3'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'PresentationUI'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'ReachFramework'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'System.Xaml'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'System.Printing'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'System.Windows.Controls.Ribbon'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'System.Windows.Presentation'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'wpfgfx_cor3'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'D3DCompiler_47_cor3'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'PenImc_cor3'" />
+    </ItemGroup>
+  </Target>
+
+</Project>

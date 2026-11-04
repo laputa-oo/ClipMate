@@ -1,0 +1,61 @@
+# ---- .NET 构建产物 ----
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+publish/
+
+# ---- Visual Studio / Rider / VS Code ----
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+# ---- 编译中间产物 ----
+*.dll
+*.pdb
+*.mdb
+*.cache
+*.tlog
+*.ilk
+*.exp
+*.lib
+*.obj
+*.o
+
+# ---- NuGet ----
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# ---- 测试与覆盖率 ----
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+
+# ---- 运行时与安装日志（含本机绝对路径，勿提交）----
+install_log.txt
+uninstall_log.txt
+unins_log.txt
+*.log
+
+# ---- 本机开发临时文件 ----
+*.tmp
+*.bak
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store

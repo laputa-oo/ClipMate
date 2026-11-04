@@ -1,0 +1,43 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore src/ClipMate/ClipMate.csproj
+
+      - name: Build
+        run: dotnet build src/ClipMate/ClipMate.csproj -c Release --no-restore
+
+      - name: Self-test
+        run: dotnet run --project src/ClipMate.Tests/ClipMate.Tests.csproj -c Release
+
+      - name: Publish portable (single file, self-contained)
+        run: >
+          dotnet publish src/ClipMate/ClipMate.csproj -c Release -r win-x64
+          --self-contained true -p:PublishSingleFile=true
+          -o publish/portable
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipMate-portable-win-x64
+          path: publish/portable/ClipMate.exe
+          if-no-files-found: error
