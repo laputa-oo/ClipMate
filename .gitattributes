@@ -1,0 +1,29 @@
+# 统一换行符，避免跨平台协作时整个文件显示为改动
+* text=auto
+
+# 源码与文档统一 LF（Git 内部存储）
+*.cs      text eol=crlf
+*.csproj  text eol=crlf
+*.props   text eol=crlf
+*.targets text eol=crlf
+*.sln     text eol=crlf
+*.md      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.json    text eol=lf
+*.py      text eol=lf
+*.sh      text eol=lf
+*.iss     text eol=crlf
+*.cmd     text eol=crlf
+*.bat     text eol=crlf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+LICENSE         text eol=lf
+
+# 二进制文件不做换行符转换，也不参与 diff
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.exe   binary
+*.dll   binary
+*.db    binary
