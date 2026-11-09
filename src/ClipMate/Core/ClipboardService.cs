@@ -12,6 +12,13 @@ public sealed class ClipboardService : IDisposable
     private string? _lastWrittenText;
     private bool _lastWrittenWasImage;
 
+    /// <summary>
+    /// 自己写剪贴板后的一小段"静默期"。
+    /// Clipboard.SetImage/SetText 内部可能分多次提交（清空→写数据），
+    /// 每次都会触发一条通知，只靠"跳过下一次"会漏掉后续通知而多记一条。
+    /// </summary>
+    private DateTimeOffset _suppressUntil = DateTimeOffset.MinValue;
+
     public AppConfig Config { get; }
     public Storage Storage => _storage;
 
@@ -38,6 +45,9 @@ public sealed class ClipboardService : IDisposable
 
     private void OnClipboardChanged()
     {
+        // 自己刚写完剪贴板，这一波通知全部跳过（不分几条）
+        if (DateTimeOffset.UtcNow < _suppressUntil) return;
+
         // 必须回到 UI(STA) 线程读剪贴板，这里由调用方保证：监听窗口本身就在 UI 线程创建。
         var snap = ClipboardReader.Read();
         if (snap is null) return;
@@ -70,6 +80,9 @@ public sealed class ClipboardService : IDisposable
             if (!Config.SaveImages) return;                       // 默认跳过图片（逆向结论）
             if (Config.MaxImageSizeMB > 0 &&
                 snap.ImageBytes.Length > (long)Config.MaxImageSizeMB * 1024 * 1024) return;
+            // 去重：复制一次图片常会触发多次剪贴板通知（先写 DIB 再写 PNG 等），
+            // 若不去重会在列表里冒出多条一模一样的图片记录。
+            if (Config.Deduplicate && IsDuplicateImage(_storage, snap.ImageBytes, snap.ImagePreview)) return;
             entry = _storage.AddImage(snap.ImageBytes, snap.ImagePreview ?? "图片");
         }
         else if (snap.HasFiles && snap.Files is { Count: > 0 })
@@ -96,11 +109,51 @@ public sealed class ClipboardService : IDisposable
     }
 
     /// <summary>
+    /// 判断刚读到的图片是否与最近一条图片重复。
+    /// 复制一次图片时，源程序往往分多次写剪贴板（先 DIB、后 PNG 等），
+    /// 每次都会触发一条 WM_CLIPBOARDUPDATE，若不去重就会出现多条相同记录。
+    ///
+    /// 判定策略（按代价从低到高）：
+    ///   1. 尺寸（"宽×高"）必须相同；
+    ///   2. PNG 字节长度相同 → 判重复；
+    ///   3. 尺寸相同且距上条不足 3 秒 → 判重复（覆盖同一图片被重新编码、字节不一致的情况）；
+    ///   4. 否则比 SHA256。
+    ///
+    /// 声明为 public static 是为了让自测无需构造整个 Service 就能验证（不涉及外部状态）。
+    /// </summary>
+    public static bool IsDuplicateImage(Storage storage, byte[] data, string? preview)
+    {
+        var latest = storage.GetEntries(groupId: -2, limit: 1);
+        if (latest.Count == 0) return false;
+        var last = latest[0];
+        if (!last.IsImage) return false;
+
+        // 尺寸不同一定是另一张图
+        if (!string.IsNullOrEmpty(preview) && last.PreviewText != preview) return false;
+
+        // 字节长度相同基本可认定同一张图
+        if (last.SizeBytes == data.Length) return true;
+
+        // 同一图片被不同编码器重编码时字节会变，用时间窗口兜底
+        if (DateTimeOffset.UtcNow - last.CreatedAt < TimeSpan.FromSeconds(3)) return true;
+
+        // 最后比内容哈希
+        var prev = storage.GetImageData(last.Id);
+        if (prev is null || prev.Length != data.Length) return false;
+        return System.Security.Cryptography.SHA256.HashData(prev)
+            .AsSpan()
+            .SequenceEqual(System.Security.Cryptography.SHA256.HashData(data));
+    }
+
+    /// <summary>
     /// 粘贴历史条目：把内容写回剪贴板，同时更新原记录时间（上浮到顶部），
     /// 而非新增一条重复记录。若配置 RemoveAfterPaste 则改为删除。
     /// </summary>
     public void Paste(ClipEntry entry)
     {
+        // 写剪贴板会产生多条通知，开一个 800ms 静默期把这些噪声全吞掉
+        _suppressUntil = DateTimeOffset.UtcNow.AddMilliseconds(800);
+
         if (entry.IsImage)
         {
             var data = _storage.GetImageData(entry.Id);

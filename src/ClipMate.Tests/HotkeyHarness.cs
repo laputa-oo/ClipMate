@@ -4,7 +4,7 @@ using System.Windows.Forms;
 // 验证热键解析：FormatKey 与 Parse 必须互逆，覆盖反引号等符号键
 class HotkeyHarness
 {
-    static int Main()
+    public static int Run()
     {
         int failures = 0;
         void Check(string name, bool ok)

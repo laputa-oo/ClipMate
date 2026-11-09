@@ -15,7 +15,7 @@ public sealed class MainForm : Form
 
     private SplitContainer _split = null!;
     private TreeView _groupTree = null!;
-    private ListView _entryList = null!;
+    private BufferedListView _entryList = null!;
     private TextBox _searchBox = null!;
     private StatusStrip _status = null!;
     private ToolStripStatusLabel _statusCount = null!;
@@ -23,6 +23,16 @@ public sealed class MainForm : Form
     private long _currentGroup = Core.ClipGroup.UngroupedId; // 0 = 未分组
     private List<Core.ClipEntry> _entries = new();
     private bool _closingToTray;
+
+    /// <summary>当前列表的 id -> 条目 映射，供自绘时快速取 pinned/类型等信息。</summary>
+    private Dictionary<long, Core.ClipEntry> _entryMap = new();
+
+    /// <summary>图片缩略图缓存（id -> 缩略图，null 表示该条取图失败）。</summary>
+    private readonly Dictionary<long, Image?> _thumbCache = new();
+
+    /// <summary>行内缩略图最大尺寸（配合行高 56 留出上下留白）。</summary>
+    private const int ThumbMaxW = 56;
+    private const int ThumbMaxH = 44;
 
     public MainForm(Core.ClipboardService service)
     {
@@ -81,15 +91,22 @@ public sealed class MainForm : Form
             }
         };
 
-        _entryList = new ListView
+        _entryList = new BufferedListView
         {
             Dock = DockStyle.Fill,
             View = View.Details,
             FullRowSelect = true,
             HideSelection = false,
             MultiSelect = false,
-            VirtualMode = false
+            VirtualMode = false,
+            // 自绘：图片条目要在行内画缩略图（系统默认只能显示 16px 小图标）
+            OwnerDraw = true,
+            // 用一个 1px 宽的 image list 单纯把行高撑到 56，便于放缩略图
+            SmallImageList = new ImageList { ImageSize = new Size(1, 56) }
         };
+        _entryList.DrawColumnHeader += (_, e) => e.DrawDefault = true;
+        _entryList.DrawItem += (_, e) => e.DrawDefault = false;   // 整行背景交给 DrawSubItem 逐格绘制
+        _entryList.DrawSubItem += OnDrawSubItem;
         _entryList.Columns.Add("内容", 440);
         _entryList.Columns.Add("时间", 150);
         _entryList.Columns.Add("大小", 80);
@@ -187,6 +204,10 @@ public sealed class MainForm : Form
         _entries = _service.Storage.GetEntries(_currentGroup, filter).ToList();
         var groups = _service.Storage.GetGroups().ToDictionary(g => g.Id, g => g.Name);
 
+        // 列表已换，旧缩略图缓存与映射一并作废，避免内存堆积和串行
+        _entryMap = _entries.ToDictionary(e => e.Id);
+        PurgeThumbCache();
+
         _entryList.BeginUpdate();
         _entryList.Items.Clear();
         foreach (var e in _entries)
@@ -199,13 +220,118 @@ public sealed class MainForm : Form
                 Tag = e.Id
             };
             lvi.SubItems.Add(e.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
-            lvi.SubItems.Add(e.IsImage ? "图片 " + e.SizeText : e.SizeText);
+            // 图片条目在「内容」列已有缩略图，大小列不必再重复「图片」二字
+            lvi.SubItems.Add(e.SizeText);
             lvi.SubItems.Add(e.Pinned ? groupName + " ★" : groupName);
             if (e.Pinned) lvi.ForeColor = Color.DarkOrange;
             _entryList.Items.Add(lvi);
         }
         _entryList.EndUpdate();
         RefreshStats();
+    }
+
+    /// <summary>只保留当前列表里还存在的 id 的缩略图，其余释放。</summary>
+    private void PurgeThumbCache()
+    {
+        if (_thumbCache.Count == 0) return;
+        var alive = _entryMap.Keys.ToHashSet();
+        var dead = _thumbCache.Keys.Where(id => !alive.Contains(id)).ToList();
+        foreach (var id in dead)
+        {
+            if (_thumbCache[id] is { } img) img.Dispose();
+            _thumbCache.Remove(id);
+        }
+    }
+
+    /// <summary>取（并按需生成）某条图片的缩略图；失败返回 null，调用方退化为只显示文字。</summary>
+    private Image? GetThumbnail(Core.ClipEntry entry)
+    {
+        if (_thumbCache.TryGetValue(entry.Id, out var cached)) return cached;
+
+        Image? thumb = null;
+        try
+        {
+            var data = _service.Storage.GetImageData(entry.Id);
+            if (data is not null)
+            {
+                using var ms = new MemoryStream(data);
+                using var src = Image.FromStream(ms);
+
+                // 等比缩放到不超过 ThumbMaxW x ThumbMaxH；小图不放大
+                var scale = Math.Min(
+                    Math.Min((double)ThumbMaxW / src.Width, (double)ThumbMaxH / src.Height), 1.0);
+                var w = Math.Max(1, (int)Math.Round(src.Width * scale));
+                var h = Math.Max(1, (int)Math.Round(src.Height * scale));
+
+                var bmp = new Bitmap(w, h);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                    g.DrawImage(src, 0, 0, w, h);
+                }
+                thumb = bmp;
+            }
+        }
+        catch
+        {
+            thumb = null;   // 图片损坏/格式异常：不阻断列表绘制
+        }
+
+        _thumbCache[entry.Id] = thumb;
+        return thumb;
+    }
+
+    /// <summary>自绘单元格：第一列遇图片条目时，左侧画缩略图、右侧写「宽×高」。</summary>
+    private void OnDrawSubItem(object? sender, DrawListViewSubItemEventArgs e)
+    {
+        if (e.Item?.Tag is not long id) return;
+        _entryMap.TryGetValue(id, out var entry);
+
+        var selected = e.Item.Selected;
+        var back = selected ? SystemColors.Highlight : _entryList.BackColor;
+        using (var brush = new SolidBrush(back))
+        {
+            e.Graphics.FillRectangle(brush, e.Bounds);
+        }
+
+        var fore = selected
+            ? SystemColors.HighlightText
+            : (entry?.Pinned == true ? Color.DarkOrange : _entryList.ForeColor);
+
+        if (e.ColumnIndex == 0 && entry?.IsImage == true)
+        {
+            const int pad = 4;
+            var left = e.Bounds.Left + pad;
+            var thumb = GetThumbnail(entry);
+
+            if (thumb is not null)
+            {
+                var top = e.Bounds.Top + (e.Bounds.Height - thumb.Height) / 2;
+                e.Graphics.DrawImage(thumb, left, top, thumb.Width, thumb.Height);
+
+                // 细边框，让白色截图在浅色背景上也有轮廓
+                using var border = new Pen(Color.FromArgb(70, 0, 0, 0));
+                e.Graphics.DrawRectangle(border, left, top, thumb.Width - 1, thumb.Height - 1);
+
+                left += thumb.Width + 8;
+            }
+
+            var textRect = new Rectangle(
+                left, e.Bounds.Top,
+                Math.Max(0, e.Bounds.Right - left - 2), e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, entry.Preview, _entryList.Font, textRect, fore,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+        else
+        {
+            var rect = new Rectangle(
+                e.Bounds.Left + 3, e.Bounds.Top,
+                Math.Max(0, e.Bounds.Width - 6), e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, e.SubItem?.Text ?? string.Empty, _entryList.Font, rect, fore,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
     }
 
     private void RefreshStats()
@@ -353,6 +479,12 @@ public sealed class MainForm : Form
             return;
         }
         _hotkey.Dispose();
+
+        foreach (var img in _thumbCache.Values)
+        {
+            img?.Dispose();
+        }
+        _thumbCache.Clear();
     }
 
     public void ReallyClose()
@@ -381,5 +513,18 @@ public sealed class MainForm : Form
             else { Show(); WindowState = FormWindowState.Normal; Activate(); }
         }
         base.WndProc(ref m);
+    }
+}
+
+/// <summary>
+/// 开启双缓冲的 ListView。
+/// 自绘（OwnerDraw）绘制缩略图时，默认会逐格刷新导致明显闪烁；
+/// ListView 的 DoubleBuffered 是 protected，只能通过子类打开。
+/// </summary>
+internal sealed class BufferedListView : ListView
+{
+    public BufferedListView()
+    {
+        DoubleBuffered = true;
     }
 }

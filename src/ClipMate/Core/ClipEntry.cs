@@ -38,7 +38,8 @@ public sealed class ClipEntry
     {
         get
         {
-            if (IsImage) return "[图片] " + PreviewText;
+            // 图片条目在列表里会直接绘制缩略图，文字只补充尺寸信息即可
+            if (IsImage) return string.IsNullOrEmpty(PreviewText) ? "图片" : PreviewText;
             var t = Content.Replace("\r", " ").Replace("\n", " ").Trim();
             return t.Length > 160 ? t[..160] + "…" : t;
         }

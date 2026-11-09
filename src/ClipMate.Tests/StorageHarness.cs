@@ -3,7 +3,7 @@ using ClipMate.Core;
 // 存储层验证：验证三重淘汰 + 空间回收（直接引用 Storage 类型，无需启动 GUI）
 class StorageHarness
 {
-    static int StorageMain()
+    public static int Run()
     {
         var dir = Path.Combine(Path.GetTempPath(), "clipnest_harness_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
