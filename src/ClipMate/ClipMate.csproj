@@ -13,9 +13,9 @@
     <ApplicationIcon>..\..\assets\ClipMate.ico</ApplicationIcon>
 
     <!-- 版本号：三处保持一致 -->
-    <Version>1.0.3</Version>
-    <FileVersion>1.0.3.0</FileVersion>
-    <AssemblyVersion>1.0.3.0</AssemblyVersion>
+    <Version>1.0.4</Version>
+    <FileVersion>1.0.4.0</FileVersion>
+    <AssemblyVersion>1.0.4.0</AssemblyVersion>
 
     <Product>ClipMate</Product>
     <Company>ClipMate</Company>

@@ -474,10 +474,16 @@ public sealed class MainForm : Form
     {
         if (_service.Config.MinimizeToTray && !_closingToTray && e.CloseReason == CloseReason.UserClosing)
         {
+            // 关闭按钮 = 最小化到托盘，不算退出
+            Core.ClipDiag.Log("ui: 点了关闭按钮 -> 最小化到托盘（进程继续运行）");
             e.Cancel = true;
             Hide();
             return;
         }
+
+        // 真正要退出时记录原因，便于日后排查"程序怎么没了"
+        Core.ClipDiag.Log($"ui: FormClosing 真正退出 reason={e.CloseReason}");
+
         _hotkey.Dispose();
 
         foreach (var img in _thumbCache.Values)
@@ -489,6 +495,7 @@ public sealed class MainForm : Form
 
     public void ReallyClose()
     {
+        Core.ClipDiag.Log("ui: 用户从托盘菜单选择「退出」");
         _closingToTray = true;
         Close();
     }

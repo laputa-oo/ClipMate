@@ -11,15 +11,31 @@ internal static class Program
         // 单实例：重复启动时唤起已有实例
         if (!Core.AppLifecycle.TryAcquireSingleInstance())
         {
+            Core.ClipDiag.Log("service: 已有实例在运行，本次启动直接退出（单实例保护）");
             MessageBox.Show("ClipMate 已在运行，请查看系统托盘图标。", "ClipMate",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+
+        // ---- 退出路径埋点 ----
+        // 目的：日后能区分"正常退出"与"被外部强杀"。
+        // 注意 TerminateProcess 强杀时不会执行任何托管代码，因此强杀的特征就是
+        // 日志在某个时刻突然中断、且看不到下面这些退出记录。
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+            Core.ClipDiag.Log("service: 进程正在退出（ProcessExit 事件）");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Core.ClipDiag.Log($"FATAL: 未处理异常，进程将终止 | IsTerminating={e.IsTerminating} | {e.ExceptionObject}");
+        Application.ApplicationExit += (_, _) =>
+            Core.ClipDiag.Log("service: 消息循环结束（ApplicationExit）");
+
         Application.ThreadException += (_, e) =>
+        {
+            Core.ClipDiag.Log($"ERROR: UI 线程未处理异常 | {e.Exception}");
             MessageBox.Show("发生未处理的异常：" + e.Exception.Message, "ClipMate",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
+        };
 
         var service = new Core.ClipboardService();
 
@@ -88,10 +104,12 @@ internal static class Program
 
         Application.Run(mainForm);
 
+        Core.ClipDiag.Log("service: Application.Run 已返回，开始清理");
         tray.Visible = false;
         tray.Dispose();
         service.Dispose();
         Core.AppLifecycle.ReleaseSingleInstance();
+        Core.ClipDiag.Log("service: 清理完成，进程即将结束（正常退出）");
     }
 
     private static Icon LoadIcon()
