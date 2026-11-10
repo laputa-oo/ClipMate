@@ -37,18 +37,23 @@ class ImageHarness
         var imgC = MakePng(120, 90, 30, 120, 220);   // 不同尺寸
 
         Console.WriteLine("[1] 图片去重：同一次复制触发多次通知只应记一条");
+        // IsDuplicateImage 只比对字节，不校验图片格式，因此这里直接用可控字节验证各分支
         using (var s = new Storage(Path.Combine(dir, "img1.db")))
         {
-            s.AddImage(imgA, "400×300");
-            // 第二次读到完全相同的字节 -> 应判重复
-            Check("相同字节判重复", ClipboardService.IsDuplicateImage(s, imgA, "400×300"));
-            // 尺寸不同 -> 不应判重复
-            Check("不同尺寸不判重复", !ClipboardService.IsDuplicateImage(s, imgC, "120×90"));
-            // 同尺寸但内容不同、且超过 3 秒时间窗 -> 不应判重复
-            var last = s.GetEntries(groupId: -2, limit: 1)[0];
-            typeof(Storage).GetMethod("Touch");  // 保持引用，避免编译器告警
-            Check("同尺寸不同内容(刚写入,在3秒窗内)视为重复",
-                ClipboardService.IsDuplicateImage(s, imgB, "400×300"));
+            var a = new byte[1000]; a[0] = 1;
+            s.AddImage(a, "10×10");
+
+            Check("相同字节判重复", ClipboardService.IsDuplicateImage(s, a, "10×10"));
+
+            var sameLenDiffContent = new byte[1000]; sameLenDiffContent[0] = 2;
+            Check("同长度但内容不同：精确比对判为不同（不误杀）",
+                !ClipboardService.IsDuplicateImage(s, sameLenDiffContent, "10×10"));
+
+            var diffLen = new byte[800]; diffLen[0] = 1;
+            Check("长度不同且刚写入：按重编码兜底判重复",
+                ClipboardService.IsDuplicateImage(s, diffLen, "10×10"));
+
+            Check("尺寸不同不判重复", !ClipboardService.IsDuplicateImage(s, a, "20×20"));
         }
 
         Console.WriteLine("[2] 图片条目能被取出（缩略图依赖此接口）");

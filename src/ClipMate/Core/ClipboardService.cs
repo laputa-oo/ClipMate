@@ -8,14 +8,15 @@ public sealed class ClipboardService : IDisposable
     private readonly Storage _storage;
     private ClipboardWatcher? _watcher;
 
-    // 程序自己写剪贴板时（粘贴历史条目）记录的内容，用于在监听回调里识别并跳过，避免重复捕获
-    private string? _lastWrittenText;
-    private bool _lastWrittenWasImage;
-
     /// <summary>
     /// 自己写剪贴板后的一小段"静默期"。
     /// Clipboard.SetImage/SetText 内部可能分多次提交（清空→写数据），
-    /// 每次都会触发一条通知，只靠"跳过下一次"会漏掉后续通知而多记一条。
+    /// 每次都会触发一条通知，全部用时间窗一次性吞掉最可靠。
+    ///
+    /// 注意：这里**只**用时间窗判断，不再用"记住上次写入内容再比对"的旧方案。
+    /// 旧方案会留下 _lastWrittenWasImage 之类的残留标记：一旦通知被时间窗提前拦截，
+    /// 标记就没人清理，之后真实的复制/截图会被误判成"自己写的"而整条丢弃
+    /// （企业微信截图不入库就是这个原因）。
     /// </summary>
     private DateTimeOffset _suppressUntil = DateTimeOffset.MinValue;
 
@@ -55,7 +56,7 @@ public sealed class ClipboardService : IDisposable
         // 自己刚写完剪贴板，这一波通知全部跳过（不分几条）
         if (DateTimeOffset.UtcNow < _suppressUntil)
         {
-            ClipDiag.Log("  -> 处于自我写入静默期，跳过");
+            ClipDiag.Log($"  -> 处于自我写入静默期，跳过（剩余 {(int)(_suppressUntil - DateTimeOffset.UtcNow).TotalMilliseconds}ms）");
             return;
         }
 
@@ -66,21 +67,6 @@ public sealed class ClipboardService : IDisposable
             ClipDiag.Log("  -> 读取结果为空（详见上一行 formats）");
             return;
         }
-
-        // 识别"自己刚粘贴的内容"：跳过，不新增重复记录，只更新时间由 Paste() 负责。
-        if (_lastWrittenText is not null && snap.HasText && snap.Text == _lastWrittenText)
-        {
-            _lastWrittenText = null;
-            return;
-        }
-        if (_lastWrittenWasImage && snap.HasImage)
-        {
-            _lastWrittenWasImage = false;
-            return;
-        }
-        // 未匹配到自己的写入（可能已被后续复制覆盖），清除残留标记
-        _lastWrittenText = null;
-        _lastWrittenWasImage = false;
 
         ClipEntry? entry = null;
 
@@ -141,11 +127,11 @@ public sealed class ClipboardService : IDisposable
     /// 复制一次图片时，源程序往往分多次写剪贴板（先 DIB、后 PNG 等），
     /// 每次都会触发一条 WM_CLIPBOARDUPDATE，若不去重就会出现多条相同记录。
     ///
-    /// 判定策略（按代价从低到高）：
-    ///   1. 尺寸（"宽×高"）必须相同；
-    ///   2. PNG 字节长度相同 → 判重复；
-    ///   3. 尺寸相同且距上条不足 3 秒 → 判重复（覆盖同一图片被重新编码、字节不一致的情况）；
-    ///   4. 否则比 SHA256。
+    /// 判定顺序（先精确、后兜底），避免误杀"用户连续截同一区域两次"：
+    ///   1. 尺寸（"宽×高"）不同 → 一定是另一张图；
+    ///   2. 字节长度相同：比 SHA256，完全相同才算重复，不同则明确是另一张图（直接返回 false）；
+    ///   3. 字节长度不同：可能是同一图片被不同编码器重编码，
+    ///      仅在 1.5 秒内（同一次复制产生的多条通知）才判重复。
     ///
     /// 声明为 public static 是为了让自测无需构造整个 Service 就能验证（不涉及外部状态）。
     /// </summary>
@@ -159,18 +145,20 @@ public sealed class ClipboardService : IDisposable
         // 尺寸不同一定是另一张图
         if (!string.IsNullOrEmpty(preview) && last.PreviewText != preview) return false;
 
-        // 字节长度相同基本可认定同一张图
-        if (last.SizeBytes == data.Length) return true;
-
-        // 同一图片被不同编码器重编码时字节会变，用时间窗口兜底
-        if (DateTimeOffset.UtcNow - last.CreatedAt < TimeSpan.FromSeconds(3)) return true;
-
-        // 最后比内容哈希
         var prev = storage.GetImageData(last.Id);
-        if (prev is null || prev.Length != data.Length) return false;
-        return System.Security.Cryptography.SHA256.HashData(prev)
-            .AsSpan()
-            .SequenceEqual(System.Security.Cryptography.SHA256.HashData(data));
+
+        // 长度相同 → 精确比内容，能明确区分"同一张"还是"另一张"
+        if (prev is not null && prev.Length == data.Length)
+        {
+            var same = System.Security.Cryptography.SHA256.HashData(prev)
+                .AsSpan()
+                .SequenceEqual(System.Security.Cryptography.SHA256.HashData(data));
+            return same;
+        }
+
+        // 长度不同：同一图片被重编码时会出现这种情况。
+        // 只在极短窗口内（同一次复制操作的多条通知，通常间隔几十毫秒）才判重复。
+        return DateTimeOffset.UtcNow - last.CreatedAt < TimeSpan.FromSeconds(1.5);
     }
 
     /// <summary>
@@ -186,14 +174,10 @@ public sealed class ClipboardService : IDisposable
         {
             var data = _storage.GetImageData(entry.Id);
             if (data is null) return;
-            _lastWrittenText = null;
-            _lastWrittenWasImage = true;
             ClipboardReader.WriteImage(data);
         }
         else
         {
-            _lastWrittenText = entry.Content;
-            _lastWrittenWasImage = false;
             ClipboardReader.WriteText(entry.Content);
         }
 
