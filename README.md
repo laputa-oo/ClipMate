@@ -6,6 +6,8 @@
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![size](https://img.shields.io/badge/installer-44MB-lightgrey)
+[![release](https://img.shields.io/github/v/release/laputa-oo/ClipMate?sort=semver)](https://github.com/laputa-oo/ClipMate/releases/latest)
+[![build](https://github.com/laputa-oo/ClipMate/actions/workflows/build.yml/badge.svg)](https://github.com/laputa-oo/ClipMate/actions/workflows/build.yml)
 
 <p align="center">
   <img src="assets/ClipMate.png" width="128" alt="ClipMate icon">
@@ -50,12 +52,12 @@ ClipMate 常驻系统托盘，自动记录你复制过的文本内容。按 `Ctr
 
 ## 下载安装
 
-从 [Releases](../../releases) 下载最新版本：
+从 [最新 Release](https://github.com/laputa-oo/ClipMate/releases/latest) 下载：
 
 | 方式 | 文件 | 说明 |
 |---|---|---|
-| 安装包（推荐） | `ClipMate-Setup.exe` | 安装向导 + 桌面快捷方式 + 可选开机自启 + 卸载入口 |
-| 便携版 | `ClipMate.exe` | 单文件，双击即用，不写注册表（除开机自启外） |
+| 安装包（推荐） | [`ClipMate-Setup.exe`](https://github.com/laputa-oo/ClipMate/releases/latest/download/ClipMate-Setup.exe) | 安装向导 + 桌面快捷方式 + 可选开机自启 + 卸载入口 |
+| 便携版 | [`ClipMate.exe`](https://github.com/laputa-oo/ClipMate/releases/latest/download/ClipMate.exe) | 单文件，双击即用，不写注册表（除开机自启外） |
 
 **系统要求**：Windows 10 / 11 x64（已在 Win10 22H2、Win11 实测）。程序自带 .NET 8 运行时，无需额外安装。
 
