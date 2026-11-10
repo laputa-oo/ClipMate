@@ -367,14 +367,14 @@ public sealed class MainForm : Form
 
         _service.Paste(e);   // 写剪贴板 + 更新时间/删除，不新增重复记录
 
+        // 无条件刷新：Paste 已把该条 created_at 更新为当前时间，
+        // 列表须重建才能让它上浮到顶部。若先 Hide 再刷新，下次唤出仍是旧顺序。
+        RefreshEntries();
+
         if (_service.Config.CloseAfterPaste)
         {
             // 粘贴后自动关闭唤出窗口
             Hide();
-        }
-        else
-        {
-            RefreshEntries();   // 更新时间后刷新，让原记录上浮
         }
     }
 

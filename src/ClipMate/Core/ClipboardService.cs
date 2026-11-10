@@ -34,6 +34,11 @@ public sealed class ClipboardService : IDisposable
     /// <summary>启动监听。注意：Clipboard API 需要 STA 线程。</summary>
     public void StartWatching()
     {
+        ClipDiag.Log(
+            $"service: 开始监听 | 版本={typeof(ClipboardService).Assembly.GetName().Version} " +
+            $"| SaveImages={Config.SaveImages} | 图片上限={Config.MaxImageSizeMB}MB " +
+            $"| 去重={Config.Deduplicate} | 热键={Config.HotkeyShow}");
+
         _watcher?.Dispose();
         _watcher = new ClipboardWatcher(OnClipboardChanged);
 
@@ -45,12 +50,22 @@ public sealed class ClipboardService : IDisposable
 
     private void OnClipboardChanged()
     {
+        ClipDiag.Log("notify: 收到 WM_CLIPBOARDUPDATE");
+
         // 自己刚写完剪贴板，这一波通知全部跳过（不分几条）
-        if (DateTimeOffset.UtcNow < _suppressUntil) return;
+        if (DateTimeOffset.UtcNow < _suppressUntil)
+        {
+            ClipDiag.Log("  -> 处于自我写入静默期，跳过");
+            return;
+        }
 
         // 必须回到 UI(STA) 线程读剪贴板，这里由调用方保证：监听窗口本身就在 UI 线程创建。
         var snap = ClipboardReader.Read();
-        if (snap is null) return;
+        if (snap is null)
+        {
+            ClipDiag.Log("  -> 读取结果为空（详见上一行 formats）");
+            return;
+        }
 
         // 识别"自己刚粘贴的内容"：跳过，不新增重复记录，只更新时间由 Paste() 负责。
         if (_lastWrittenText is not null && snap.HasText && snap.Text == _lastWrittenText)
@@ -77,13 +92,26 @@ public sealed class ClipboardService : IDisposable
         }
         else if (snap.HasImage && snap.ImageBytes is not null)
         {
-            if (!Config.SaveImages) return;                       // 默认跳过图片（逆向结论）
+            if (!Config.SaveImages)
+            {
+                ClipDiag.Log("  -> 图片被跳过：设置里「保存图片」未开启");
+                return;
+            }
             if (Config.MaxImageSizeMB > 0 &&
-                snap.ImageBytes.Length > (long)Config.MaxImageSizeMB * 1024 * 1024) return;
+                snap.ImageBytes.Length > (long)Config.MaxImageSizeMB * 1024 * 1024)
+            {
+                ClipDiag.Log($"  -> 图片被跳过：{snap.ImageBytes.Length / 1024}KB 超过单张上限 {Config.MaxImageSizeMB}MB");
+                return;
+            }
             // 去重：复制一次图片常会触发多次剪贴板通知（先写 DIB 再写 PNG 等），
             // 若不去重会在列表里冒出多条一模一样的图片记录。
-            if (Config.Deduplicate && IsDuplicateImage(_storage, snap.ImageBytes, snap.ImagePreview)) return;
+            if (Config.Deduplicate && IsDuplicateImage(_storage, snap.ImageBytes, snap.ImagePreview))
+            {
+                ClipDiag.Log("  -> 图片被判重复，跳过新增");
+                return;
+            }
             entry = _storage.AddImage(snap.ImageBytes, snap.ImagePreview ?? "图片");
+            ClipDiag.Log($"  -> 已保存图片条目 #{entry.Id} {snap.ImagePreview} ({snap.ImageSourceFormat})");
         }
         else if (snap.HasFiles && snap.Files is { Count: > 0 })
         {

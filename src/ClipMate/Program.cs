@@ -45,11 +45,36 @@ internal static class Program
             MessageBox.Show($"清理完成：删除 {r.deleted} 条。\n数据库 {r.before:N0} B → {r.after:N0} B",
                 "清理结果", MessageBoxButtons.OK, MessageBoxIcon.Information);
         };
+
+        // 诊断入口：某些工具截图后条目不进列表时，让用户能直接把日志打开查看/反馈
+        var diagItem = new ToolStripMenuItem("打开剪贴板诊断日志");
+        diagItem.Click += (_, _) =>
+        {
+            try
+            {
+                if (!File.Exists(Core.ClipDiag.LogPath))
+                {
+                    File.WriteAllText(Core.ClipDiag.LogPath, "（暂无测试记录，请先复制/截图一次再打开）\r\n");
+                }
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo("notepad.exe", Core.ClipDiag.LogPath)
+                    {
+                        UseShellExecute = true
+                    });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开日志失败：" + ex.Message, "ClipMate",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        };
+
         var exitItem = new ToolStripMenuItem("退出");
         exitItem.Click += (_, _) => mainForm.ReallyClose();
         menu.Items.Add(showItem);
         menu.Items.Add(settingsItem);
         menu.Items.Add(cleanupItem);
+        menu.Items.Add(diagItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
 

@@ -107,6 +107,35 @@ class ImageHarness
         });
         Check("只写自定义 PNG 格式也能读出图片", clipOk);
 
+        Console.WriteLine("[5] 未知厂商格式名 + PNG 数据（魔数兜底）");
+        var magicOk = RunSta(() =>
+        {
+            try
+            {
+                var png = MakePng(160, 120, 200, 60, 30);
+                var obj = new DataObject();
+                // 故意用一个程序完全不认识的私有格式名，模拟企业微信/QQ 等的自定义格式
+                obj.SetData("SomeVendor_PrivateImage_Fmt", new MemoryStream(png));
+                Clipboard.SetDataObject(obj, true);
+
+                var snap = ClipboardReader.Read();
+                var ok = snap is { HasImage: true } && snap.ImageBytes is { Length: > 0 }
+                         && snap.ImageSourceFormat?.EndsWith(":magic") == true;
+                Console.WriteLine($"      命中格式: {snap?.ImageSourceFormat ?? "(无)"}, 尺寸: {snap?.ImagePreview ?? "-"}");
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("      异常: " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                try { Clipboard.SetText("ClipMate 自测已完成。"); } catch { }
+            }
+        });
+        Check("未知格式名也能按 PNG 魔数认出图片", magicOk);
+
         Console.WriteLine();
         Console.WriteLine(failures == 0 ? "全部通过 ✅" : $"{failures} 项失败 ❌");
         return failures;

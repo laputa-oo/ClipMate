@@ -66,7 +66,14 @@ public sealed class ClipboardReader
         {
             throw;   // 交给上层重试
         }
-        if (data is null) return null;
+        if (data is null)
+        {
+            ClipDiag.Log("clip: GetDataObject() 返回 null");
+            return null;
+        }
+
+        // 先记下这次剪贴板登记的全部格式名，排查"某工具截图认不出"时看这一行
+        var formatList = ClipDiag.FormatList(data);
 
         var snap = new Snapshot();
 
@@ -108,7 +115,16 @@ public sealed class ClipboardReader
             }
         }
 
-        if (!snap.HasText && !snap.HasImage && !snap.HasFiles) return null;
+        if (!snap.HasText && !snap.HasImage && !snap.HasFiles)
+        {
+            ClipDiag.Log($"clip: formats=[{formatList}] -> 无可识别内容（text/image/files 均为空）");
+            return null;
+        }
+
+        ClipDiag.Log(
+            $"clip: formats=[{formatList}] -> text={snap.HasText} image={snap.HasImage}" +
+            $" fmt={snap.ImageSourceFormat ?? "-"} size={snap.ImagePreview ?? "-"} files={snap.HasFiles}");
+
         return snap;
     }
 
@@ -169,7 +185,66 @@ public sealed class ClipboardReader
         }
         catch { }
 
+        // 5) 通用兜底：不管格式名叫什么，只要数据是图片字节（按文件魔数判断）就认。
+        //    覆盖企业微信/QQ/钉钉等各种厂商自定义格式名。
+        try
+        {
+            var names = data.GetFormats();
+            var tried = 0;
+            foreach (var name in names)
+            {
+                if (tried++ >= 24) break;   // 防止格式过多导致卡顿
+                if (name is "CF_DIB" or "DeviceIndependentBitmap" or "Bitmap" or "dib") continue;
+
+                byte[]? bytes;
+                try { bytes = ExtractBytes(data.GetData(name)); }
+                catch { continue; }
+                if (bytes is null || bytes.Length < 8) continue;
+
+                var byMagic = DecodeByMagic(bytes);
+                if (byMagic is not null) return (byMagic, name + ":magic");
+            }
+        }
+        catch { }
+
         return (null, null);
+    }
+
+    /// <summary>按文件头魔数判断并解码图片，不依赖剪贴板格式名。</summary>
+    private static Image? DecodeByMagic(byte[] b)
+    {
+        try
+        {
+            // PNG: 89 50 4E 47
+            if (b.Length > 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47)
+            {
+                using var ms = new MemoryStream(b);
+                return new Bitmap(ms);
+            }
+            // JPEG: FF D8 FF
+            if (b.Length > 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF)
+            {
+                using var ms = new MemoryStream(b);
+                return new Bitmap(ms);
+            }
+            // GIF: "GIF8"
+            if (b.Length > 6 && b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x38)
+            {
+                using var ms = new MemoryStream(b);
+                return new Bitmap(ms);
+            }
+            // BMP: "BM"
+            if (b.Length > 14 && b[0] == 0x42 && b[1] == 0x4D)
+            {
+                using var ms = new MemoryStream(b);
+                return new Bitmap(ms);
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>剪贴板里的图片数据可能是 Stream / MemoryStream / byte[]，统一取字节。</summary>

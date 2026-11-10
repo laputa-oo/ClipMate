@@ -66,8 +66,11 @@ public sealed class AppConfig
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    private static string ConfigDir => Path.Combine(
+    /// <summary>数据目录 %LOCALAPPDATA%\ClipMate（配置、数据库、诊断日志都在这里）。</summary>
+    public static string DataDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClipMate");
+
+    private static string ConfigDir => DataDirectory;
 
     private static string ConfigFile => Path.Combine(ConfigDir, "config.json");
 
